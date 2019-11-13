@@ -98,7 +98,7 @@ ExecuteKernel<
       nrMinSize_ = PackingTraits<
           int8_t,
           typename packingAMatrix::accType,
-          inst_set_t::avx2>::NR;
+          inst_set_t::avx2>::NR_MIN;
     } else {
       assert(0 && "unsupported architecure");
     }
@@ -140,30 +140,26 @@ void ExecuteKernel<
           accum,
           packed_rows_A,
           packedB_.blockColSize(),
-          packedA_.numPackedCols(),
-          nbSize_);
+          packedA_.numPackedCols());
     } else {
       fn = BaseType::template getOrCreate<inst_set_t::avx512_vnni>(
           accum,
           packed_rows_A,
           packedB_.blockColSize(),
-          packedA_.numPackedCols(),
-          nbSize_);
+          packedA_.numPackedCols());
     }
   } else if (fbgemmHasAvx512Support()) {
     fn = BaseType::template getOrCreate<inst_set_t::avx512>(
         accum,
         packed_rows_A,
         packedB_.blockColSize(),
-        packedA_.numPackedCols(),
-        nbSize_);
+        packedA_.numPackedCols());
   } else if (fbgemmHasAvx2Support()) {
     fn = BaseType::template getOrCreate<inst_set_t::avx2>(
         accum,
         packed_rows_A,
         packedB_.blockColSize(),
-        packedA_.numPackedCols(),
-        nbSize_);
+        packedA_.numPackedCols());
   } else {
     // TODO: Have default slower path
     assert(0 && "unsupported architecture");
@@ -182,13 +178,13 @@ void ExecuteKernel<
       if (nc != nbSize_) {
         if (fbgemmHasAvx512VnniSupport()) {
           fn = BaseType::template getOrCreate<inst_set_t::avx512_vnni>(
-              accum, packed_rows_A, nc, packedA_.numPackedCols(), nbSize_);
+              accum, packed_rows_A, nc, packedA_.numPackedCols());
         } else if (fbgemmHasAvx512Support()) {
           fn = BaseType::template getOrCreate<inst_set_t::avx512>(
-              accum, packed_rows_A, nc, packedA_.numPackedCols(), nbSize_);
+              accum, packed_rows_A, nc, packedA_.numPackedCols());
         } else if (fbgemmHasAvx2Support()) {
           fn = BaseType::template getOrCreate<inst_set_t::avx2>(
-              accum, packed_rows_A, nc, packedA_.numPackedCols(), nbSize_);
+              accum, packed_rows_A, nc, packedA_.numPackedCols());
         } else {
           // TODO: Have default slower path
           assert(0 && "unsupported architecture");
