@@ -23,8 +23,6 @@ void CodeGenBase<uint8_t, int8_t, int32_t, int16_t>::initCRegs<
     int rowRegs,
     int colRegs,
     int leadingDimCReg) {
-  assert(0 && "Accumulation to int16_t is not available for VNNI!");
-
   // For AVX512VNNI, redirect to int32_t accumulation.
   CodeGenBase<uint8_t, int8_t, int32_t, int32_t> codeObj;
   codeObj.initCRegs<inst_set_t::avx512_vnni>(
@@ -47,8 +45,6 @@ void CodeGenBase<uint8_t, int8_t, int32_t, int16_t>::genComputeBlock<
     int colRegs,
     int lda,
     int leadingDimCReg) {
-  assert(0 && "Accumulation to int16_t is not available for VNNI!");
-
   // For AVX512VNNI, redirect to int32_t accumulation.
   CodeGenBase<uint8_t, int8_t, int32_t, int32_t> codeObj;
   codeObj.genComputeBlock<inst_set_t::avx512_vnni>(
@@ -70,8 +66,6 @@ void CodeGenBase<uint8_t, int8_t, int32_t, int16_t>::storeCRegs<
     x86::Gp ldcReg,
     bool accum,
     int leadingDimCReg) {
-  assert(0 && "Accumulation to int16_t is not available for VNNI!");
-
   // For AVX512VNNI, redirect to int32_t accumulation.
   CodeGenBase<uint8_t, int8_t, int32_t, int32_t> codeObj;
   codeObj.storeCRegs<inst_set_t::avx512_vnni>(
@@ -92,8 +86,6 @@ CodeGenBase<uint8_t, int8_t, int32_t, int16_t>::getOrCreate<
     int32_t nc,
     int32_t kc,
     int32_t /* unused */) {
-  assert(0 && "Accumulation to int16_t is not available for VNNI!");
-
   // For AVX512VNNI, redirect to int32_t accumulation.
   CodeGenBase<uint8_t, int8_t, int32_t, int32_t> codeObj;
   return codeObj.getOrCreate<inst_set_t::avx512_vnni>(accum, mc, nc, kc, kc);
