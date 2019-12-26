@@ -264,12 +264,12 @@ TEST_P(SparseAdagradTest, rowwiseTest) {
         << "return vals differ, reference is: " << ret_ref
         << " ,fbgemm is: " << ret_fbgemm;
     for (int i = 0; i < h.size(); ++i) {
-      EXPECT_NEAR(h[i], h_ref[i], 1e-3)
+      EXPECT_EQ(h[i], h_ref[i])
           << "results for h differ at (" << i << ") reference: " << h_ref[i]
           << ", FBGEMM: " << h[i] << " emb dim :" << block_size;
     }
     for (int i = 0; i < w.size(); ++i) {
-      EXPECT_NEAR(w[i], w_ref[i], 1e-3)
+      EXPECT_EQ(w[i], w_ref[i])
           << "results for w differ at (" << i << ") reference: " << w_ref[i]
           << ", FBGEMM: " << w[i] << " emb dim :" << block_size;
     }

@@ -47,7 +47,7 @@ class GenSparseAdagrad {
       int prefetch,
       typename simd_info<instSet>::vec_reg_t epsilon_vreg,
       typename simd_info<instSet>::vec_reg_t lr_vreg,
-      typename simd_info<instSet>::vec_reg_t mask_vreg,
+      x86::Ymm mask_vreg,
       typename simd_info<instSet>::vec_reg_t temp_vreg);
 
   void genRowwiseSparseAdagrad(
@@ -60,7 +60,7 @@ class GenSparseAdagrad {
       int prefetch,
       typename simd_info<instSet>::vec_reg_t epsilon_vreg,
       typename simd_info<instSet>::vec_reg_t lr_vreg,
-      typename simd_info<instSet>::vec_reg_t mask_vreg);
+      x86::Ymm mask_vreg);
 
   typename ReturnFunctionSignature<indxType>::jit_sparse_adagrad_kernel
   getOrCreate(int block_size, int prefetch, bool rowwise);
@@ -115,8 +115,9 @@ void GenSparseAdagrad<indxType, instSet>::genSparseAdagrad(
     int prefetch,
     typename simd_info<instSet>::vec_reg_t epsilon_vreg,
     typename simd_info<instSet>::vec_reg_t lr_vreg,
-    typename simd_info<instSet>::vec_reg_t mask_vreg,
+    x86::Ymm mask_vreg,
     typename simd_info<instSet>::vec_reg_t temp_vreg) {
+  // NOTE: temp_vreg is defined only when remainder is true and instSet == avx2
   typedef typename simd_info<instSet>::vec_reg_t vec_reg_t;
   for (int vec_idx = 0; vec_idx < num_vec_regs_per_block;
        vec_idx += unroll_factor) {
@@ -135,135 +136,64 @@ void GenSparseAdagrad<indxType, instSet>::genSparseAdagrad(
             x86::dword_ptr(w, temp2_, 0, (vec_idx + v) * vlen * sizeof(float)));
       }
 
+      auto g_ptr = x86::dword_ptr(
+          g, base_offset_g, 0, (vec_idx + v) * vlen * sizeof(float));
+      auto h_ptr = x86::dword_ptr(
+          h, base_offset, 0, (vec_idx + v) * vlen * sizeof(float));
+      auto w_ptr = x86::dword_ptr(
+          w, base_offset, 0, (vec_idx + v) * vlen * sizeof(float));
       if (remainder && vec_idx + v == num_vec_regs_per_block - 1) {
         if (instSet == inst_set_t::avx2) {
-          a->vmaskmovps(
-              x86::ymm(out_vreg.id()),
-              x86::ymm(mask_vreg.id()),
-              x86::dword_ptr(
-                  g, base_offset_g, 0, (vec_idx + v) * vlen * sizeof(float)));
-
-          a->vmulps(out_vreg, out_vreg, out_vreg);
-          a->vmaskmovps(
-              x86::ymm(temp_vreg.id()),
-              x86::ymm(mask_vreg.id()),
-              x86::dword_ptr(
-                  h, base_offset, 0, (vec_idx + v) * vlen * sizeof(float)));
-
+          a->vmaskmovps(x86::ymm(nw_vreg.id()), mask_vreg, g_ptr);
+          a->vmulps(out_vreg, nw_vreg, nw_vreg);
+          a->vmaskmovps(x86::ymm(temp_vreg.id()), mask_vreg, h_ptr);
           a->vaddps(out_vreg, out_vreg, temp_vreg);
 
-          a->vmaskmovps(
-              x86::dword_ptr(
-                  h, base_offset, 0, (vec_idx + v) * vlen * sizeof(float)),
-              x86::ymm(mask_vreg.id()),
-              x86::ymm(out_vreg.id()));
+          a->vmaskmovps(h_ptr, mask_vreg, x86::ymm(out_vreg.id()));
 
           a->vsqrtps(out_vreg, out_vreg);
           a->vaddps(out_vreg, out_vreg, epsilon_vreg);
 
-          a->vmaskmovps(
-              x86::ymm(nw_vreg.id()),
-              x86::ymm(mask_vreg.id()),
-              x86::dword_ptr(
-                  g, base_offset_g, 0, (vec_idx + v) * vlen * sizeof(float)));
-
           a->vdivps(out_vreg, nw_vreg, out_vreg);
 
           a->vmulps(out_vreg, out_vreg, lr_vreg);
-          a->vmaskmovps(
-              x86::ymm(temp_vreg.id()),
-              x86::ymm(mask_vreg.id()),
-              x86::dword_ptr(
-                  w, base_offset, 0, (vec_idx + v) * vlen * sizeof(float)));
-
+          a->vmaskmovps(x86::ymm(temp_vreg.id()), mask_vreg, w_ptr);
           a->vaddps(out_vreg, out_vreg, temp_vreg);
 
-          a->vmaskmovps(
-              x86::dword_ptr(
-                  w, base_offset, 0, (vec_idx + v) * vlen * sizeof(float)),
-              x86::ymm(mask_vreg.id()),
-              x86::ymm(out_vreg.id()));
+          a->vmaskmovps(w_ptr, mask_vreg, x86::ymm(out_vreg.id()));
         } else if (instSet == inst_set_t::avx512) {
-          a->k(x86::k(1)).vmovups(
-              out_vreg,
-              x86::dword_ptr(
-                  g, base_offset_g, 0, (vec_idx + v) * vlen * sizeof(float)));
+          a->k(x86::k(1)).vmovups(nw_vreg, g_ptr);
+          a->k(x86::k(1)).vmulps(out_vreg, nw_vreg, nw_vreg);
+          a->k(x86::k(1)).vaddps(out_vreg, out_vreg, h_ptr);
 
-          a->k(x86::k(1)).vmulps(out_vreg, out_vreg, out_vreg);
-
-          a->k(x86::k(1)).vaddps(
-              out_vreg,
-              out_vreg,
-              x86::dword_ptr(
-                  h, base_offset, 0, (vec_idx + v) * vlen * sizeof(float)));
-
-          a->k(x86::k(1)).vmovups(
-              x86::dword_ptr(
-                  h, base_offset, 0, (vec_idx + v) * vlen * sizeof(float)),
-              out_vreg);
+          a->k(x86::k(1)).vmovups(h_ptr, out_vreg);
 
           a->k(x86::k(1)).vsqrtps(out_vreg, out_vreg);
           a->k(x86::k(1)).vaddps(out_vreg, out_vreg, epsilon_vreg);
 
-          a->k(x86::k(1)).vmovups(
-              nw_vreg,
-              x86::dword_ptr(
-                  g, base_offset_g, 0, (vec_idx + v) * vlen * sizeof(float)));
-
           a->k(x86::k(1)).vdivps(out_vreg, nw_vreg, out_vreg);
+
           a->k(x86::k(1)).vmulps(out_vreg, out_vreg, lr_vreg);
+          a->k(x86::k(1)).vaddps(out_vreg, out_vreg, w_ptr);
 
-          a->k(x86::k(1)).vaddps(
-              out_vreg,
-              out_vreg,
-              x86::dword_ptr(
-                  w, base_offset, 0, (vec_idx + v) * vlen * sizeof(float)));
-
-          a->k(x86::k(1)).vmovups(
-              x86::dword_ptr(
-                  w, base_offset, 0, (vec_idx + v) * vlen * sizeof(float)),
-              out_vreg);
+          a->k(x86::k(1)).vmovups(w_ptr, out_vreg);
         }
       } else {
-        a->vmovups(
-            out_vreg,
-            x86::dword_ptr(
-                g, base_offset_g, 0, (vec_idx + v) * vlen * sizeof(float)));
+        a->vmovups(nw_vreg, g_ptr);
+        a->vmulps(out_vreg, nw_vreg, nw_vreg);
+        a->vaddps(out_vreg, out_vreg, h_ptr);
 
-        a->vmulps(out_vreg, out_vreg, out_vreg);
-
-        a->vaddps(
-            out_vreg,
-            out_vreg,
-            x86::dword_ptr(
-                h, base_offset, 0, (vec_idx + v) * vlen * sizeof(float)));
-
-        a->vmovups(
-            x86::dword_ptr(
-                h, base_offset, 0, (vec_idx + v) * vlen * sizeof(float)),
-            out_vreg);
+        a->vmovups(h_ptr, out_vreg);
 
         a->vsqrtps(out_vreg, out_vreg);
         a->vaddps(out_vreg, out_vreg, epsilon_vreg);
 
-        a->vmovups(
-            nw_vreg,
-            x86::dword_ptr(
-                g, base_offset_g, 0, (vec_idx + v) * vlen * sizeof(float)));
-
         a->vdivps(out_vreg, nw_vreg, out_vreg);
+
         a->vmulps(out_vreg, out_vreg, lr_vreg);
+        a->vaddps(out_vreg, out_vreg, w_ptr);
 
-        a->vaddps(
-            out_vreg,
-            out_vreg,
-            x86::dword_ptr(
-                w, base_offset, 0, (vec_idx + v) * vlen * sizeof(float)));
-
-        a->vmovups(
-            x86::dword_ptr(
-                w, base_offset, 0, (vec_idx + v) * vlen * sizeof(float)),
-            out_vreg);
+        a->vmovups(w_ptr, out_vreg);
       }
     }
   }
@@ -280,7 +210,7 @@ void GenSparseAdagrad<indxType, instSet>::genRowwiseSparseAdagrad(
     int prefetch,
     typename simd_info<instSet>::vec_reg_t epsilon_vreg,
     typename simd_info<instSet>::vec_reg_t lr_vreg,
-    typename simd_info<instSet>::vec_reg_t mask_vreg) {
+    x86::Ymm mask_vreg) {
   typedef typename simd_info<instSet>::vec_reg_t vec_reg_t;
 
   // Reduce the unroll factor by 2
@@ -307,34 +237,19 @@ void GenSparseAdagrad<indxType, instSet>::genRowwiseSparseAdagrad(
     for (int v = 0; v < cur_unroll_factor; ++v) {
       vec_reg_t out_vreg = vec_reg_t(v);
 
+      auto g_ptr = x86::dword_ptr(
+          g, base_offset_g, 0, (vec_idx + v) * vlen * sizeof(float));
       if (remainder && vec_idx + v == num_vec_regs_per_block - 1) {
         if (instSet == inst_set_t::avx2) {
-          a->vmaskmovps(
-              x86::ymm(out_vreg.id()),
-              x86::ymm(mask_vreg.id()),
-              x86::dword_ptr(
-                  g, base_offset_g, 0, (vec_idx + v) * vlen * sizeof(float)));
-
-          a->vmulps(out_vreg, out_vreg, out_vreg);
-          a->vaddps(partial_sum_vreg, partial_sum_vreg, out_vreg);
+          a->vmaskmovps(x86::ymm(out_vreg.id()), mask_vreg, g_ptr);
         } else {
-          a->k(x86::k(1)).vmovups(
-              out_vreg,
-              x86::dword_ptr(
-                  g, base_offset_g, 0, (vec_idx + v) * vlen * sizeof(float)));
-
-          a->k(x86::k(1)).vmulps(out_vreg, out_vreg, out_vreg);
-          a->k(x86::k(1)).vaddps(partial_sum_vreg, partial_sum_vreg, out_vreg);
+          a->k(x86::k(1)).vmovups(out_vreg, g_ptr);
         }
       } else {
-        a->vmovups(
-            out_vreg,
-            x86::dword_ptr(
-                g, base_offset_g, 0, (vec_idx + v) * vlen * sizeof(float)));
-
-        a->vmulps(out_vreg, out_vreg, out_vreg);
-        a->vaddps(partial_sum_vreg, partial_sum_vreg, out_vreg);
+        a->vmovups(out_vreg, g_ptr);
       }
+      a->vmulps(out_vreg, out_vreg, out_vreg);
+      a->vaddps(partial_sum_vreg, partial_sum_vreg, out_vreg);
     }
   }
   // Reduce sum to 1 value
@@ -412,63 +327,37 @@ void GenSparseAdagrad<indxType, instSet>::genRowwiseSparseAdagrad(
             x86::dword_ptr(w, temp2_, 0, (vec_idx + v) * vlen * sizeof(float)));
       }
 
+      auto g_ptr = x86::dword_ptr(
+          g, base_offset_g, 0, (vec_idx + v) * vlen * sizeof(float));
+      auto w_ptr = x86::dword_ptr(
+          w, base_offset, 0, (vec_idx + v) * vlen * sizeof(float));
       if (remainder && vec_idx + v == num_vec_regs_per_block - 1) {
         if (instSet == inst_set_t::avx2) {
-          a->vmaskmovps(
-              x86::ymm(out_vreg.id()),
-              x86::ymm(mask_vreg.id()),
-              x86::dword_ptr(
-                  g, base_offset_g, 0, (vec_idx + v) * vlen * sizeof(float)));
+          a->vmaskmovps(x86::ymm(out_vreg.id()), mask_vreg, g_ptr);
 
-          a->vmaskmovps(
-              x86::ymm(w_vreg.id()),
-              x86::ymm(mask_vreg.id()),
-              x86::dword_ptr(
-                  w, base_offset, 0, (vec_idx + v) * vlen * sizeof(float)));
+          a->vmaskmovps(x86::ymm(w_vreg.id()), mask_vreg, w_ptr);
 
           a->vmulps(out_vreg, out_vreg, partial_sum_vreg);
           a->vaddps(w_vreg, w_vreg, out_vreg);
-          a->vmaskmovps(
-              x86::dword_ptr(
-                  w, base_offset, 0, (vec_idx + v) * vlen * sizeof(float)),
-              x86::ymm(mask_vreg.id()),
-              x86::ymm(w_vreg.id()));
+          a->vmaskmovps(w_ptr, mask_vreg, x86::ymm(w_vreg.id()));
 
         } else {
-          a->k(x86::k(1)).vmovups(
-              out_vreg,
-              x86::dword_ptr(
-                  g, base_offset_g, 0, (vec_idx + v) * vlen * sizeof(float)));
+          a->k(x86::k(1)).vmovups(out_vreg, g_ptr);
 
-          a->k(x86::k(1)).vmovups(
-              w_vreg,
-              x86::dword_ptr(
-                  w, base_offset, 0, (vec_idx + v) * vlen * sizeof(float)));
+          a->k(x86::k(1)).vmovups(w_vreg, w_ptr);
 
           a->k(x86::k(1)).vmulps(out_vreg, out_vreg, partial_sum_vreg);
           a->k(x86::k(1)).vaddps(w_vreg, w_vreg, out_vreg);
-          a->k(x86::k(1)).vmovups(
-              x86::dword_ptr(
-                  w, base_offset, 0, (vec_idx + v) * vlen * sizeof(float)),
-              w_vreg);
+          a->k(x86::k(1)).vmovups(w_ptr, w_vreg);
         }
       } else {
-        a->vmovups(
-            out_vreg,
-            x86::dword_ptr(
-                g, base_offset_g, 0, (vec_idx + v) * vlen * sizeof(float)));
+        a->vmovups(out_vreg, g_ptr);
 
-        a->vmovups(
-            w_vreg,
-            x86::dword_ptr(
-                w, base_offset, 0, (vec_idx + v) * vlen * sizeof(float)));
+        a->vmovups(w_vreg, w_ptr);
 
         a->vmulps(out_vreg, out_vreg, partial_sum_vreg);
         a->vaddps(w_vreg, w_vreg, out_vreg);
-        a->vmovups(
-            x86::dword_ptr(
-                w, base_offset, 0, (vec_idx + v) * vlen * sizeof(float)),
-            w_vreg);
+        a->vmovups(w_ptr, w_vreg);
       }
     }
   }
@@ -638,54 +527,25 @@ GenSparseAdagrad<indxType, instSet>::getOrCreate(
         // set offset to zero
         a->xor_(base_offset_g, base_offset_g);
 
-        if (rowwise) {
-          if (areIndices64b) {
-            a->imul(
-                base_offset,
-                x86::qword_ptr(
-                    indices,
-                    temp1_,
-                    3), // use of 3 is to muliply by 8 (int64_t)
-                static_cast<asmjit::Imm>(sizeof(float)));
-          } else {
-            a->imul(
-                base_offset.r32(),
-                x86::dword_ptr(
-                    indices,
-                    temp1_,
-                    2), // use of 2 is to muliply by 4 (int32_t)
-                static_cast<asmjit::Imm>(sizeof(float)));
-          }
-
-        } else { // sparse adagrad
-
-          if (areIndices64b) {
-            a->imul(
-                base_offset,
-                x86::qword_ptr(
-                    indices,
-                    temp1_,
-                    3), // use of 3 is to muliply by 8 (int64_t)
-                static_cast<asmjit::Imm>(block_size * sizeof(float)));
-          } else {
-            a->imul(
-                base_offset.r32(),
-                x86::dword_ptr(
-                    indices,
-                    temp1_,
-                    2), // use of 2 is to muliply by 4 (int32_t)
-                static_cast<asmjit::Imm>(block_size * sizeof(float)));
-          }
-        }
+        auto indices_ptr = areIndices64b
+            ? x86::qword_ptr(
+                  indices, temp1_, 3) // use of 3 is to muliply by 8 (int64_t)
+            : x86::dword_ptr(
+                  indices, temp1_, 2); // use of 2 is to muliply by 4 (int32_t)
+        a->imul(
+            areIndices64b ? base_offset : base_offset.r32(),
+            indices_ptr,
+            static_cast<asmjit::Imm>(
+                (rowwise ? 1 : block_size) * sizeof(float)));
 
         // Perform this check
         // if (block_size + offsetIdx > param_size) {
         //   return i;
         // }
         if (areIndices64b) {
-          a->mov(temp2_, x86::qword_ptr(indices, temp1_, 3));
+          a->mov(temp2_, indices_ptr);
         } else {
-          a->mov(temp2_.r32(), x86::dword_ptr(indices, temp1_, 2));
+          a->mov(temp2_.r32(), indices_ptr);
         }
         a->inc(temp2_);
         a->imul(
@@ -703,55 +563,33 @@ GenSparseAdagrad<indxType, instSet>::getOrCreate(
           a->cmp(temp2_.r32(), num_rows);
           a->jge(pref_dist_reset_start);
 
-          if (areIndices64b) {
-            if (rowwise) {
-              a->imul(
-                  temp3_,
-                  x86::qword_ptr(indices, temp2_, 3),
-                  static_cast<asmjit::Imm>(sizeof(float)));
-            }
+          indices_ptr = areIndices64b ? x86::qword_ptr(indices, temp2_, 3)
+                                      : x86::dword_ptr(indices, temp2_, 2);
+          if (rowwise) {
             a->imul(
-                temp2_,
-                x86::qword_ptr(indices, temp2_, 3),
-                static_cast<asmjit::Imm>(block_size * sizeof(float)));
-          } else {
-            if (rowwise) {
-              a->imul(
-                  temp3_.r32(),
-                  x86::dword_ptr(indices, temp2_, 2),
-                  static_cast<asmjit::Imm>(sizeof(float)));
-            }
-            a->imul(
-                temp2_.r32(),
-                x86::dword_ptr(indices, temp2_, 2),
-                static_cast<asmjit::Imm>(block_size * sizeof(float)));
+                areIndices64b ? temp3_ : temp3_.r32(),
+                indices_ptr,
+                static_cast<asmjit::Imm>(sizeof(float)));
           }
+          a->imul(
+              areIndices64b ? temp2_ : temp2_.r32(),
+              indices_ptr,
+              static_cast<asmjit::Imm>(block_size * sizeof(float)));
 
           a->jmp(pref_dist_reset_end);
 
           a->bind(pref_dist_reset_start);
-          if (areIndices64b) {
+          indices_ptr = areIndices64b ? x86::qword_ptr(indices, temp1_, 3)
+                                      : x86::dword_ptr(indices, temp1_, 2);
+          a->imul(
+              areIndices64b ? temp2_ : temp2_.r32(),
+              indices_ptr,
+              static_cast<asmjit::Imm>(block_size * sizeof(float)));
+          if (rowwise) {
             a->imul(
-                temp2_,
-                x86::qword_ptr(indices, temp1_, 3),
-                static_cast<asmjit::Imm>(block_size * sizeof(float)));
-            if (rowwise) {
-              a->imul(
-                  temp3_,
-                  x86::qword_ptr(indices, temp1_, 3),
-                  static_cast<asmjit::Imm>(sizeof(float)));
-            }
-          } else {
-            a->imul(
-                temp2_.r32(),
-                x86::dword_ptr(indices, temp1_, 2),
-                static_cast<asmjit::Imm>(block_size * sizeof(float)));
-            if (rowwise) {
-              a->imul(
-                  temp3_.r32(),
-                  x86::dword_ptr(indices, temp1_, 2),
-                  static_cast<asmjit::Imm>(sizeof(float)));
-            }
+                areIndices64b ? temp3_ : temp3_.r32(),
+                indices_ptr,
+                static_cast<asmjit::Imm>(sizeof(float)));
           }
 
           a->bind(pref_dist_reset_end);
@@ -768,7 +606,7 @@ GenSparseAdagrad<indxType, instSet>::getOrCreate(
               prefetch,
               epsilon_vreg,
               lr_vreg,
-              mask_vreg);
+              x86::Ymm(mask_vreg.id()));
         } else {
           genSparseAdagrad(
               a,
