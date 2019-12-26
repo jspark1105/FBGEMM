@@ -815,9 +815,9 @@ int sparse_adagrad_ref(
 
     for (auto j = 0; j < block_size; ++j) {
       float gj = g_[j];
-      float hj = h_[j] + gj * gj;
+      float hj = fma(gj, gj, h_[j]);
       nh_[j] = hj;
-      nw_[j] = w_[j] + lr * gj / (std::sqrt(hj) + epsilon);
+      nw_[j] = fma(lr, gj / (std::sqrt(hj) + epsilon), w_[j]);
     }
   }
   return num_rows;
@@ -859,7 +859,7 @@ int rowwise_sparse_adagrad_ref(
     array<float, VLEN> partial_sum = {0.0f};
     for (auto j = 0; j < block_size; ++j) {
       float gj = g_[j];
-      partial_sum[j % VLEN] += gj * gj;
+      partial_sum[j % VLEN] = fma(gj, gj, partial_sum[j % VLEN]);
     }
     final_sum = ((partial_sum[0] + partial_sum[1]) +
                  (partial_sum[2] + partial_sum[3])) +
@@ -870,7 +870,7 @@ int rowwise_sparse_adagrad_ref(
 
     for (auto j = 0; j < block_size; ++j) {
       float gj = g_[j];
-      w_[j] += gj * float_step;
+      w_[j] = fma(gj, float_step, w_[j]);
     }
   }
   return num_rows;
