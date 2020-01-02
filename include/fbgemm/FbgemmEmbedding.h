@@ -7,6 +7,8 @@
 #pragma once
 #include <cstdint>
 
+#include "fbgemm/FbgemmBuild.h"
+
 namespace fbgemm {
 template <typename inType = std::uint8_t, typename IndexType = std::int64_t>
 FBGEMM_API bool EmbeddingSpMDM(
@@ -23,14 +25,18 @@ FBGEMM_API bool EmbeddingSpMDM(
     int prefetch = 16,
     bool IS_WEIGHT_POSITIONAL = false);
 
+/**
+ * @return The number of rows processed. If smaller than num_rows, an error
+ *         must have happened at the last row processed.
+ */
 template <typename IndexType>
 FBGEMM_API int SparseAdaGrad(
     int num_rows, // number of rows reading
     int block_size, // number of parameters per rows
     std::uint64_t param_size, // total number of parameters
-    float* w, // input parameters
+    float* w, // input/output parameters
     const float* g, // input gradients
-    float* h, // input momentums
+    float* h, // input/output momentums
     const IndexType* indices, // indices of each row
     float epsilon,
     float lr,
