@@ -149,53 +149,49 @@ void GenSparseAdagrad<indxType, instSet>::genSparseAdagrad(
       if (remainder && vec_idx + v == num_vec_regs_per_block - 1) {
         if (instSet == inst_set_t::avx2) {
           a->vmaskmovps(x86::ymm(g_vreg.id()), mask_vreg, g_ptr);
-          a->vmulps(out_vreg, g_vreg, g_vreg);
-          a->vmaskmovps(x86::ymm(temp_vreg.id()), mask_vreg, h_ptr);
-          a->vaddps(out_vreg, out_vreg, temp_vreg);
+          a->vmaskmovps(x86::ymm(out_vreg.id()), mask_vreg, h_ptr);
+          a->vfmadd231ps(out_vreg, g_vreg, g_vreg);
 
           a->vmaskmovps(h_ptr, mask_vreg, x86::ymm(out_vreg.id()));
 
           a->vsqrtps(out_vreg, out_vreg);
           a->vaddps(out_vreg, out_vreg, epsilon_vreg);
 
-          a->vdivps(out_vreg, g_vreg, out_vreg);
+          a->vdivps(temp_vreg, lr_vreg, out_vreg);
 
-          a->vmulps(out_vreg, out_vreg, lr_vreg);
-          a->vmaskmovps(x86::ymm(temp_vreg.id()), mask_vreg, w_ptr);
-          a->vaddps(out_vreg, out_vreg, temp_vreg);
+          a->vmaskmovps(x86::ymm(out_vreg.id()), mask_vreg, w_ptr);
+          a->vfmadd231ps(out_vreg, g_vreg, temp_vreg);
 
           a->vmaskmovps(w_ptr, mask_vreg, x86::ymm(out_vreg.id()));
         } else if (instSet == inst_set_t::avx512) {
-          a->k(x86::k(1)).vmovups(g_vreg, g_ptr);
-          a->k(x86::k(1)).vmulps(out_vreg, g_vreg, g_vreg);
-          a->k(x86::k(1)).vaddps(out_vreg, out_vreg, h_ptr);
+          a->k(x86::k(1)).vmovups(out_vreg, g_ptr);
+          a->k(x86::k(1)).vmovaps(g_vreg, out_vreg);
+          a->k(x86::k(1)).vfmadd213ps(out_vreg, out_vreg, h_ptr);
 
           a->k(x86::k(1)).vmovups(h_ptr, out_vreg);
 
           a->k(x86::k(1)).vsqrtps(out_vreg, out_vreg);
           a->k(x86::k(1)).vaddps(out_vreg, out_vreg, epsilon_vreg);
 
-          a->k(x86::k(1)).vdivps(out_vreg, g_vreg, out_vreg);
+          a->k(x86::k(1)).vdivps(out_vreg, lr_vreg, out_vreg);
 
-          a->k(x86::k(1)).vmulps(out_vreg, out_vreg, lr_vreg);
-          a->k(x86::k(1)).vaddps(out_vreg, out_vreg, w_ptr);
+          a->k(x86::k(1)).vfmadd213ps(out_vreg, g_vreg, w_ptr);
 
           a->k(x86::k(1)).vmovups(w_ptr, out_vreg);
         }
       } else {
-        a->vmovups(g_vreg, g_ptr);
-        a->vmulps(out_vreg, g_vreg, g_vreg);
-        a->vaddps(out_vreg, out_vreg, h_ptr);
+        a->vmovups(out_vreg, g_ptr);
+        a->vmovaps(g_vreg, out_vreg);
+        a->vfmadd213ps(out_vreg, out_vreg, h_ptr);
 
         a->vmovups(h_ptr, out_vreg);
 
         a->vsqrtps(out_vreg, out_vreg);
         a->vaddps(out_vreg, out_vreg, epsilon_vreg);
 
-        a->vdivps(out_vreg, g_vreg, out_vreg);
+        a->vdivps(out_vreg, lr_vreg, out_vreg);
 
-        a->vmulps(out_vreg, out_vreg, lr_vreg);
-        a->vaddps(out_vreg, out_vreg, w_ptr);
+        a->vfmadd213ps(out_vreg, g_vreg, w_ptr);
 
         a->vmovups(w_ptr, out_vreg);
       }
@@ -258,8 +254,7 @@ void GenSparseAdagrad<indxType, instSet>::genRowwiseSparseAdagrad(
       } else {
         a->vmovups(out_vreg, g_ptr);
       }
-      a->vmulps(out_vreg, out_vreg, out_vreg);
-      a->vaddps(partial_sum_vreg_avx2, partial_sum_vreg_avx2, out_vreg);
+      a->vfmadd231ps(partial_sum_vreg_avx2, out_vreg, out_vreg);
     }
   }
   // Reduce sum to 1 value
@@ -346,20 +341,19 @@ void GenSparseAdagrad<indxType, instSet>::genRowwiseSparseAdagrad(
       if (remainder && vec_idx + v == num_vec_regs_per_block - 1) {
         if (instSet == inst_set_t::avx2) {
           a->vmaskmovps(x86::ymm(temp_vreg.id()), mask_vreg, g_ptr);
-          a->vmulps(temp_vreg, partial_sum_vreg, temp_vreg);
 
           a->vmaskmovps(x86::ymm(out_vreg.id()), mask_vreg, w_ptr);
-          a->vaddps(out_vreg, temp_vreg, out_vreg);
 
+          a->vfmadd231ps(out_vreg, partial_sum_vreg, temp_vreg);
           a->vmaskmovps(w_ptr, mask_vreg, x86::ymm(out_vreg.id()));
         } else {
-          a->k(x86::k(1)).vmulps(out_vreg, partial_sum_vreg, g_ptr);
-          a->k(x86::k(1)).vaddps(out_vreg, out_vreg, w_ptr);
+          a->k(x86::k(1)).vmovups(out_vreg, g_ptr);
+          a->k(x86::k(1)).vfmadd213ps(out_vreg, partial_sum_vreg, w_ptr);
           a->k(x86::k(1)).vmovups(w_ptr, out_vreg);
         }
       } else {
-        a->vmulps(out_vreg, partial_sum_vreg, g_ptr);
-        a->vaddps(out_vreg, out_vreg, w_ptr);
+        a->vmovups(out_vreg, g_ptr);
+        a->vfmadd213ps(out_vreg, partial_sum_vreg, w_ptr);
         a->vmovups(w_ptr, out_vreg);
       }
     }
