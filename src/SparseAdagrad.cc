@@ -158,9 +158,9 @@ void GenSparseAdagrad<indxType, instSet>::genSparseAdagrad(
           a->vsqrtps(out_vreg, out_vreg);
           a->vaddps(out_vreg, out_vreg, epsilon_vreg);
 
+          a->vmulps(g_vreg, lr_vreg, g_vreg);
           a->vdivps(out_vreg, g_vreg, out_vreg);
 
-          a->vmulps(out_vreg, out_vreg, lr_vreg);
           a->vmaskmovps(x86::ymm(temp_vreg.id()), mask_vreg, w_ptr);
           a->vaddps(out_vreg, out_vreg, temp_vreg);
 
@@ -175,9 +175,9 @@ void GenSparseAdagrad<indxType, instSet>::genSparseAdagrad(
           a->k(x86::k(1)).vsqrtps(out_vreg, out_vreg);
           a->k(x86::k(1)).vaddps(out_vreg, out_vreg, epsilon_vreg);
 
+          a->k(x86::k(1)).vmulps(g_vreg, lr_vreg, g_vreg);
           a->k(x86::k(1)).vdivps(out_vreg, g_vreg, out_vreg);
 
-          a->k(x86::k(1)).vmulps(out_vreg, out_vreg, lr_vreg);
           a->k(x86::k(1)).vaddps(out_vreg, out_vreg, w_ptr);
 
           a->k(x86::k(1)).vmovups(w_ptr, out_vreg);
@@ -192,9 +192,9 @@ void GenSparseAdagrad<indxType, instSet>::genSparseAdagrad(
         a->vsqrtps(out_vreg, out_vreg);
         a->vaddps(out_vreg, out_vreg, epsilon_vreg);
 
+        a->vmulps(g_vreg, lr_vreg, g_vreg);
         a->vdivps(out_vreg, g_vreg, out_vreg);
 
-        a->vmulps(out_vreg, out_vreg, lr_vreg);
         a->vaddps(out_vreg, out_vreg, w_ptr);
 
         a->vmovups(w_ptr, out_vreg);
