@@ -40,7 +40,8 @@ macro(add_gtest TESTNAME)
   #For static build, defining FBGEMM_STATIC to avoid generating
   #functions with _dllimport attributes.
   if(MSVC)
-    target_compile_options(${TESTNAME} PRIVATE "/arch:AVX2")
+    target_compile_options(${TESTNAME} PRIVATE
+      "/arch:AVX2" "/wd4244" "/wd4267" "/wd4305" "/wd4309")
     if (FBGEMM_LIBRARY_TYPE STREQUAL "static")
       target_compile_definitions(${TESTNAME} PRIVATE FBGEMM_STATIC)
     endif()
